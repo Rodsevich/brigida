@@ -6,6 +6,7 @@ import 'package:scheduled_notifications/scheduled_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import './data.dart' as data;
 import './menu.dart' as menu;
+import './notificaciones.dart' as notificaciones;
 
 void main() {
   runApp(new MaterialApp(
@@ -107,7 +108,25 @@ class StateOracionesWidget extends State<OracionesWidget> {
         _terminoHoy = fechaFin.isBefore(manana.add(new Duration(days: 1)));
       });
     });
+    menu.configurar(
+        onComienzoConfigurado: (DateTime dt) {
+          fechaComienzo = dt;
+        },
+        onDiaFinalizado: _terminarDia,
+        onHoraNotificaciones: (DateTime dt) {
+          _configurarNotificaciones(dt);
+        });
   }
+
+  _terminarDia() {
+    setState(() {
+      _oracionActual = oraciones.length - 1;
+      _oracionLlegada = oraciones.length - 1;
+      fechaFin = new DateTime.now();
+    });
+  }
+
+  void _configurarNotificaciones(DateTime dt) {}
 
   @override
   Widget build(BuildContext context) {
@@ -190,31 +209,15 @@ class StateOracionesWidget extends State<OracionesWidget> {
       });
   }
 
-  _setearNotificaciones() async {
-    await _cancelarNotif();
-    DateTime ahora = new DateTime.now();
-    DateTime noche = new DateTime(ahora.year, ahora.month, ahora.day, 23);
-    prefs.setInt(
-        "notif1",
-        await notificacion("Oraciones Santa Brígida",
-            "Ya hiciste hasta la $_oracionActual oración", noche));
-  }
-
-  Future _cancelarNotif() async {
-    int notif1 = prefs.getInt("notif1");
-    if (await ScheduledNotifications.hasScheduledNotification(notif1))
-      ScheduledNotifications.unscheduleNotification(notif1);
-  }
-
   void _oracionContinuada() {
     setState(() {
       if (oracionActual < oraciones.length) {
         if (++oracionActual > oracionLlegada) {
           oracionLlegada = oracionActual;
-          _setearNotificaciones();
+          notificaciones.setearNotificaciones(prefs);
         }
       } else {
-        _cancelarNotif();
+        notificaciones.cancelarNotificaciones(prefs);
         fechaFin = new DateTime.now();
       }
     });
@@ -273,9 +276,4 @@ class StateOracionesWidget extends State<OracionesWidget> {
       }
     }
   }
-}
-
-Future<int> notificacion(String titulo, String contenido, DateTime cuando) {
-  return ScheduledNotifications.scheduleNotification(
-      cuando.millisecondsSinceEpoch, titulo, titulo, contenido);
 }
