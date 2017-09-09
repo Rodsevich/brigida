@@ -42,9 +42,11 @@ manejarEleccionMenu(String value) {
     showTimePicker(
             context: _context, initialTime: new TimeOfDay(hour: 21, minute: 30))
         .then((TimeOfDay time) {
-      Function.apply(_horaNotificaciones, [
-        new DateTime(ahora.year, ahora.month, ahora.day, time.hour, time.minute)
-      ]);
+      if (time != null)
+        Function.apply(_horaNotificaciones, [
+          new DateTime(
+              ahora.year, ahora.month, ahora.day, time.hour, time.minute)
+        ]);
     });
   } else if (val == MenuItems.FINALIZAR_DIA.index) {
     Function.apply(_finDia, []);
