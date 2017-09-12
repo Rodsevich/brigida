@@ -33,9 +33,8 @@ class StateOracionesWidget extends State<OracionesWidget> {
   List<Step> oracionesSteps = [];
   int _oracionActual;
 
-  bool get terminoHoy => prefs != null
-      ? fechaFin.isBefore(alba.add(new Duration(days: 1)))
-      : false;
+  bool get terminoHoy =>
+      (prefs != null) ? _oracionLlegada >= oraciones.length - 1 : false;
 
   int get oracionActual => _oracionActual;
 
@@ -80,18 +79,27 @@ class StateOracionesWidget extends State<OracionesWidget> {
 
   DateTime get fechaFin => _fechaFin;
 
-  void set fechaFin(DateTime fechaFin) {
-    _fechaFin = fechaFin;
-    prefs.setInt("fecha_fin", fechaFin.millisecondsSinceEpoch);
-    if (fechaFin.isAfter(mediaNoche)) {
-      if (fechaFin.isBefore(alba)) {
-        fechaComienzo = new DateTime.now();
-      }
+  void set fechaFin(DateTime nuevaFechaFin) {
+    if (_fechaFin.isBefore(mediaNoche.subtract(new Duration(days: 1)))) {
+      _preguntarSiEmpezarDeNuevo().then((bool empezarDeNuevo) {
+        manejarRespuestaEmpezarDeNuevo(empezarDeNuevo);
+        if (empezarDeNuevo) _fechaFin = nuevaFechaFin;
+      });
+    } else if (_fechaFin.isAfter(mediaNoche.subtract(new Duration(days: 1))) &&
+        _fechaFin.isBefore(alba)) {
+      // if (nuevaFechaFin.isBefore(alba)) {
+      _fechaFin = nuevaFechaFin;
+      prefs.setInt("fecha_fin", nuevaFechaFin.millisecondsSinceEpoch);
+      // }
     }
   }
 
-  DateTime alba;
-  DateTime mediaNoche;
+  DateTime get alba => mediaNoche.add(new Duration(hours: 5));
+
+  DateTime get mediaNoche {
+    DateTime ahora = new DateTime.now();
+    return new DateTime(ahora.year, ahora.month, ahora.day);
+  }
 
   StateOracionesWidget() {
     SharedPreferences.getInstance().then((pref) {
@@ -107,17 +115,19 @@ class StateOracionesWidget extends State<OracionesWidget> {
         }
         _fechaFin = new DateTime.fromMillisecondsSinceEpoch(
             prefs.getInt("fecha_fin") ?? 0);
-        DateTime ahora = new DateTime.now();
-        mediaNoche = new DateTime(ahora.year, ahora.month, ahora.day);
-        alba = new DateTime(ahora.year, ahora.month, ahora.day, 5);
-        if (fechaFin.isBefore(mediaNoche)) {
-          oracionActual = 0;
-          oracionLlegada = 0;
-        } else if (fechaFin.isAfter(alba)) {
-          oracionActual = 0;
-          oracionLlegada = 0;
-          fechaComienzo = new DateTime.now();
-        }
+        if (fechaFin.year >= 2017) {
+          if (fechaFin.isAfter(mediaNoche.subtract(new Duration(days: 1))) &&
+              fechaFin.isBefore(alba)) {
+            if (_oracionLlegada == oraciones.length - 1) {
+              oracionActual = 0;
+              oracionLlegada = 0;
+            }
+          } else if (fechaFin
+              .isBefore(mediaNoche.subtract(new Duration(days: 1))))
+            _preguntarSiEmpezarDeNuevo().then(manejarRespuestaEmpezarDeNuevo);
+        } else
+          _fechaFin = new DateTime.now();
+        print("$fechaComienzo - $fechaFin ($_oracionActual/$oracionLlegada)");
         int notif = prefs.getInt("horario_notificaciones") ??
             mediaNoche
                 .add(new Duration(hours: 21, minutes: 30))
@@ -164,7 +174,6 @@ class StateOracionesWidget extends State<OracionesWidget> {
     else {
       _procesarOraciones();
       body = new Stepper(
-        key: new Key("stepper"),
         steps: oracionesSteps,
         currentStep:
             (oracionActual < oracionesSteps.length) ? oracionActual : 0,
@@ -187,13 +196,13 @@ class StateOracionesWidget extends State<OracionesWidget> {
       ),
       body: body,
       primary: true,
-      floatingActionButton: !terminoHoy
-          ? null
-          : new FloatingActionButton(
+      floatingActionButton: terminoHoy
+          ? new FloatingActionButton(
               tooltip: 'Mostrar progreso',
               backgroundColor: Colors.orange,
               child: new Icon(_progresoMostrado ? Icons.close : Icons.info),
-              onPressed: _mostrarProgreso),
+              onPressed: _mostrarProgreso)
+          : null,
     );
   }
 
@@ -237,15 +246,13 @@ class StateOracionesWidget extends State<OracionesWidget> {
 
   void _oracionContinuada() {
     setState(() {
-      if (oracionActual < oraciones.length) {
+      if (oracionActual < oraciones.length - 1) {
         if (++oracionActual > oracionLlegada) {
           oracionLlegada = oracionActual;
           _configurarNotificaciones();
         }
-      } else {
-        notificaciones.cancelarNotificaciones(prefs);
-        fechaFin = new DateTime.now();
-      }
+      } else
+        _terminarDia();
     });
   }
 
@@ -300,6 +307,43 @@ class StateOracionesWidget extends State<OracionesWidget> {
           oracionesSteps.add(elem);
         }
       }
+    }
+  }
+
+  Future<bool> _preguntarSiEmpezarDeNuevo() {
+    return showDialog<bool>(
+        context: context,
+        child: new AlertDialog(
+            content: new Text(
+              "Ayer no registré que hicieras las oraciones...",
+              // style: theme.textTheme.subhead
+              //     .copyWith(color: theme.textTheme.caption.color)
+            ),
+            actions: <Widget>[
+              new FlatButton(
+                  child: const Text('Si, las hice'),
+                  onPressed: () {
+                    Navigator.pop(context, false);
+                  }),
+              new FlatButton(
+                  child: const Text('No, empezar de nuevo'),
+                  onPressed: () {
+                    Navigator.pop(context, true);
+                  })
+            ]));
+  }
+
+  manejarRespuestaEmpezarDeNuevo(bool empezarDeNuevo) {
+    // The value passed to Navigator.pop() or null.
+    if (empezarDeNuevo == null)
+      _preguntarSiEmpezarDeNuevo().then(manejarRespuestaEmpezarDeNuevo);
+    else {
+      setState(() {
+        if (empezarDeNuevo)
+          fechaComienzo = new DateTime.now();
+        else
+          fechaFin = mediaNoche.subtract(new Duration(seconds: 1));
+      });
     }
   }
 }
